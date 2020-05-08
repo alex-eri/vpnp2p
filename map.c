@@ -1,59 +1,74 @@
 #include "map.h"
 
-mac_map * map_insert(mac_map * peers, mac_t * mac, addr_t * addr ){
+
+void map_insert(list_t * peers, mac_t * mac, addr_t * addr ){
     mac_map * new = malloc(sizeof (mac_map));
-    new->next = peers;
-    peers = new;
+    new->next = peers->items;
     new->mac = * mac;
     new->addr = * addr;
     new->expire = time(0) + TIMEOUT;
-    map_remove(new->next, &(new->mac), &(new->addr), true);
-    return new;
+    map_remove(peers, &(new->mac), &(new->addr), true);
+    peers->items = new;
 }
 
-mac_map * map_remove_next(mac_map* prev) {
-    mac_map * peer = prev->next;
-    prev->next = peer->next;
-    free(peer);
-    return prev;
-}
 
 #define CHECK(p,v) (v != NULL && memcmp(&(p->v), v, sizeof (* v)) ==0 )
 
-void map_remove(mac_map* peers, mac_t *mac, addr_t *addr, bool _and) {
-    mac_map * p = peers;
-    mac_map pstart;
-    mac_map * prev = &pstart;
-    pstart.next = peers;
+void map_remove(list_t * peers, mac_t *mac, addr_t *addr, bool _and) {
+    mac_map * p = peers->items;
+    mac_map * prev = NULL;
     time_t now = time(0);
-    while ( p ) {
 
+    while ( p ) {
         if (    ( _and &&  ( CHECK(p, mac) && CHECK(p, addr) )) ||
                 ( !_and && ( CHECK(p, mac) || CHECK(p, addr) )) ||
                 p->expire < now
                 ) {
-            p = map_remove_next(prev);
+            if (prev) {
+                prev->next = p->next;
+            }
+            else {
+                peers->items = p->next;
+            }
+            prev=p;
+            p=p->next;
+            free(prev);
+        } else {
+            prev = p;
+            p=p->next;
         }
-        prev = p;
-        p=p->next;
-    };
+    }
 }
 
 
-mac_map * map_find(mac_map* peers, mac_t *mac) {
-    mac_map * p = peers;
-    mac_map pstart;
-    mac_map * prev = &pstart;
-    pstart.next = peers;
+mac_map *  map_find(list_t * peers, mac_t *mac, mac_map * prev) {
+    mac_map * p ;
+
+    if (prev) {
+        p = prev;
+    } else {
+        p = peers->items;
+    }
     time_t now = time(0);
+
     while ( p ) {
-        if ( p->expire < now) {
-            p = map_remove_next(prev);
+        if ( p->expire < now ) {
+            if (prev) {
+                prev->next = p->next;
+            }
+            else {
+                peers->items = p->next;
+            }
+            prev=p;
+            p=p->next;
+            free(prev);
         } else if ( CHECK(p, mac) ) {
             return p;
+        } else {
+            prev = p;
+            p=p->next;
         }
-        prev = p;
-        p=p->next;
-    } ;
+    };
+
     return NULL;
 }

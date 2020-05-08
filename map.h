@@ -21,21 +21,25 @@ typedef union {
 } addr_t;
 
 typedef struct mac_map_s {
-    struct mac_map_s* next;
     time_t expire;
     mac_t mac;
     addr_t addr;
+    void * next;
 } mac_map;
 
+typedef struct list_s {
+    void * items;
+} list_t;
 
-void map_remove(mac_map * peers, mac_t * mac, addr_t * addr, bool _and) ;
+
+
+void map_remove(list_t * peers, mac_t * mac, addr_t * addr, bool _and) ;
 
 #define map_remove_mac(peers, mac) map_remove(peers, mac, NULL, 0)
 #define map_remove_addr(peers, addr) map_remove(peers, NULL, addr, 0)
 
-mac_map * map_insert(mac_map * peers, mac_t * mac, addr_t * addr );
-mac_map * map_find(mac_map * peers, mac_t * mac);
-
+void map_insert(list_t * peers, mac_t * mac, addr_t * addr );
+mac_map *  map_find(list_t * peers, mac_t *mac, mac_map * prev);
 #define puint16cmp(p,b) (uint16_t)&(p) == htons(b)
 
 #endif

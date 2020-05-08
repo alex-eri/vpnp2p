@@ -23,7 +23,7 @@ typedef struct service_data {
     char * stun_host;
     char * stun_port;
     addr_t extaddr;
-    mac_map *peers;
+    list_t peers;
     ssize_t peers_count;
     unsigned int stun_identifier[3];
 
@@ -115,8 +115,9 @@ void stun_on_read(uv_udp_t *handle, const uv_buf_t *buf) {
 void fprintf_ipport(FILE *fd, struct sockaddr_in *addr) {
     char extaddr[17] = { 0 };
     uv_ip4_name(addr, extaddr, 16);
-    fprintf(fd, "%s:%d", extaddr, addr->sin_port);
+    fprintf(fd, "\n%s:%d", extaddr, ntohs(addr->sin_port));
 }
+
 
 void on_read(uv_udp_t *handle, ssize_t nread, const uv_buf_t *buf, const struct sockaddr *addr, unsigned flags) {
     if (nread < 0) {
@@ -133,9 +134,10 @@ void on_read(uv_udp_t *handle, ssize_t nread, const uv_buf_t *buf, const struct 
     uv_buf_t mbuf = uv_buf_init(buf->base, nread);
     service_data_t* data = (service_data_t*) handle->data;
     mac_t * mac;
-    mac_map * peer;
     uint16_t type;
     memcpy(&type, buf->base,2);
+
+    fprintf_ipport(stderr, (struct sockaddr_in*)addr);
 
     switch(type) {
 
@@ -145,10 +147,9 @@ void on_read(uv_udp_t *handle, ssize_t nread, const uv_buf_t *buf, const struct 
         break;
 
     case 0x7575 :
-        mac = (mac_t *)(buf->base + 2);
-        peer = map_insert(data->peers, mac, (addr_t*) addr);
-        peer = map_insert(peer, &mac_broadcast, (addr_t*) addr);
-        data->peers = peer;
+        mac = (mac_t *)(buf->base + 8);
+        map_insert(&(data->peers), mac, (addr_t*) addr);
+        map_insert(&(data->peers), &mac_broadcast, (addr_t*) addr);
         break;
     }
     free(buf->base);
@@ -250,12 +251,12 @@ void packet_on_tap(uv_stream_t* handle, ssize_t nread, const uv_buf_t* buf){
     uv_buf_t message_buf = uv_buf_init(message, nread + 4);
 
     mac_t * mac = (mac_t * )buf->base;
-    mac_map * peer = map_find(data->peers, mac);
+    mac_map * peer = map_find(&(data->peers), mac, NULL);
 
     while (peer) {
         udp_req = malloc(sizeof (uv_udp_send_t));
         uv_udp_send(udp_req, data->socket, &message_buf, 1, &(peer->addr.addr), on_send);
-        peer = map_find(data->peers, mac);
+        peer = map_find(&(data->peers), mac, peer->next);
     }
 
     free(message);
@@ -297,13 +298,16 @@ void read_stdin(uv_stream_t *stream, ssize_t nread, const uv_buf_t* buf)
 
           addr_t addr;
           uv_ip4_addr(ip, atoi(port), &(addr.addr_in));
-          data->peers= map_insert(data->peers, &mac_broadcast, &addr);
+          map_insert(&(data->peers), &mac_broadcast, &addr);
       } else if (strncmp("list", cmd, 4)==0) {
-          mac_map * peer = map_find(data->peers, &mac_broadcast);
+          mac_map * peer = data->peers.items;
           while (peer) {
-              fprintf_ipport(stdout, &(peer->addr.addr_in));
-              fprintf(stdout," %lx \n", peer->expire - time(0) );
-              peer = map_find(data->peers, &mac_broadcast);
+
+              if (memcmp(&(peer->mac), &mac_broadcast, 6)==0) {
+                fprintf_ipport(stdout, &(peer->addr.addr_in));
+                fprintf(stdout," %ld \n", peer->expire - time(0));
+              }
+              peer = peer->next;
           }
 
       }
@@ -345,6 +349,7 @@ int main()
     data->socket = recv_socket;
     data->stun_host = strdup("stun.l.google.com");
     data->stun_port = strdup("19302");
+    data->peers.items = NULL;
     uv_udp_init(loop, recv_socket);
     struct sockaddr_in recv_addr;
     uv_ip4_addr("0.0.0.0", 7785, &recv_addr);
