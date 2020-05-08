@@ -4,7 +4,5 @@ project(vpnp2p LANGUAGES C)
 
 add_subdirectory(libuv)
 
-add_executable(vpnp2p main.c)
-#add_executable(vpnp2p_mini main_mini.c)
-target_link_libraries(vpnp2p uv)
-#target_link_libraries(vpnp2p_mini uv)
+add_executable(vpnp2p main.c map.c)
+target_link_libraries(vpnp2p uv_a)
