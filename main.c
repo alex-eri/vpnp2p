@@ -23,6 +23,7 @@ typedef struct service_data {
     char * stun_host;
     char * stun_port;
     addr_t extaddr;
+    addr_t intaddr;
     list_t peers;
     ssize_t peers_count;
     unsigned int stun_identifier[3];
@@ -68,6 +69,14 @@ struct STUNXORMappedIPv4Address
 void alloc_buffer(uv_handle_t *handle, size_t suggested_size, uv_buf_t *buf) {
   buf->base = malloc(suggested_size);
   buf->len = suggested_size;
+}
+
+void on_write(uv_write_t* req, int status) {
+    if (status) {
+        fprintf(stderr, "Send error: %s\n", uv_strerror(status));
+        return;
+    }
+    free(req);
 }
 
 void on_send(uv_udp_send_t *req, int status) {
@@ -150,6 +159,10 @@ void on_read(uv_udp_t *handle, ssize_t nread, const uv_buf_t *buf, const struct 
         mac = (mac_t *)(buf->base + 8);
         map_insert(&(data->peers), mac, (addr_t*) addr);
         map_insert(&(data->peers), &mac_broadcast, (addr_t*) addr);
+        mbuf = uv_buf_init(buf->base+2, nread-2);
+        uv_write_t *req=malloc(sizeof (uv_write_t));
+        uv_write(req, (uv_stream_t *)data->tun, &mbuf, 1, on_write);
+
         break;
     }
     free(buf->base);
@@ -248,7 +261,7 @@ void packet_on_tap(uv_stream_t* handle, ssize_t nread, const uv_buf_t* buf){
     char * message = malloc(nread + 2);
     memset(message, 0x75, 2);
     memcpy(message + 2, buf->base, nread);
-    uv_buf_t message_buf = uv_buf_init(message, nread + 4);
+    uv_buf_t message_buf = uv_buf_init(message, nread + 2);
 
     mac_t * mac = (mac_t * )buf->base;
     mac_map * peer = map_find(&(data->peers), mac, NULL);
@@ -256,7 +269,12 @@ void packet_on_tap(uv_stream_t* handle, ssize_t nread, const uv_buf_t* buf){
     while (peer) {
         udp_req = malloc(sizeof (uv_udp_send_t));
         uv_udp_send(udp_req, data->socket, &message_buf, 1, &(peer->addr.addr), on_send);
-        peer = map_find(&(data->peers), mac, peer->next);
+        fprintf_ipport(stderr,&(peer->addr.addr_in));
+        if (peer->next) {
+            peer = map_find(&(data->peers), mac, peer->next);
+        } else {
+            break;
+        }
     }
 
     free(message);
@@ -305,7 +323,7 @@ void read_stdin(uv_stream_t *stream, ssize_t nread, const uv_buf_t* buf)
 
               if (memcmp(&(peer->mac), &mac_broadcast, 6)==0) {
                 fprintf_ipport(stdout, &(peer->addr.addr_in));
-                fprintf(stdout," %ld \n", peer->expire - time(0));
+                fprintf(stdout," %ld ", peer->expire - time(0));
               }
               peer = peer->next;
           }
@@ -317,6 +335,9 @@ void read_stdin(uv_stream_t *stream, ssize_t nread, const uv_buf_t* buf)
   else if (strncmp("show", class, 4)==0) {
       fprintf(stdout,"\nexternal address: ");
       fprintf_ipport(stdout, (struct sockaddr_in *)&(data->extaddr));
+      fprintf(stdout,"\ninternal address: ");
+      fprintf_ipport(stdout, (struct sockaddr_in *)&(data->intaddr));
+      fprintf(stdout,"\n");
   }
 
 }
@@ -324,6 +345,7 @@ void read_stdin(uv_stream_t *stream, ssize_t nread, const uv_buf_t* buf)
 
 int main()
 {
+    int r;
     uv_loop_t *loop = uv_default_loop();
     uv_pipe_t * tun_pipe =  malloc(sizeof (uv_pipe_t));
     uv_udp_t * recv_socket = malloc(sizeof (uv_udp_t));
@@ -334,11 +356,16 @@ int main()
     uv_pipe_init(uv_default_loop(), stdin_pipe, 0);
     uv_pipe_open(stdin_pipe, 0);
     uv_read_start((uv_stream_t *)stdin_pipe, alloc_buffer, read_stdin);
-
+    int tap;
     char * dev = malloc(IFNAMSIZ);
-    strncpy(dev, "tapp2p", IFNAMSIZ);
-    int tap = tun_alloc(dev);
-    if (tap < 0) return tap;
+    for (int i = 0; ; i++) {
+        sprintf(dev,"tapp2p%d",i);
+        //strncpy(dev, "tapp2p", IFNAMSIZ);
+        tap = tun_alloc(dev);
+        if (tap < 0 && i==5)
+            return 1;
+        if (tap > 3) break;
+    }
     uv_pipe_init(loop, tun_pipe, 0);
     tun_pipe->data = data;
     uv_pipe_open(tun_pipe, tap);
@@ -351,14 +378,19 @@ int main()
     data->stun_port = strdup("19302");
     data->peers.items = NULL;
     uv_udp_init(loop, recv_socket);
-    struct sockaddr_in recv_addr;
-    uv_ip4_addr("0.0.0.0", 7785, &recv_addr);
-    uv_udp_bind(recv_socket, (struct sockaddr * )&recv_addr, 0);
+    for (int i = 0; ; i++) {
+        if (i==5)
+            return 2;
+        uv_ip4_addr("0.0.0.0", 7785+i, &(data->intaddr.addr_in));
+        printf("%d\n",data->intaddr.addr_in.sin_port);
+        fprintf_ipport(stderr,&(data->intaddr.addr_in));
+        if (uv_udp_bind(recv_socket, &(data->intaddr.addr), 0)==0) break;
+    }
     uv_udp_recv_start(recv_socket, alloc_buffer, on_read);
     uv_timer_t stun_timer;
     stun_timer.data = data;
     uv_timer_init(loop, &stun_timer);
     uv_timer_start(&stun_timer, stun, 0, 120000);
-    int r = uv_run(loop, UV_RUN_DEFAULT);
+    r = uv_run(loop, UV_RUN_DEFAULT);
     return r;
 }
