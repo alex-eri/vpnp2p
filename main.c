@@ -297,7 +297,7 @@ void read_stdin(uv_stream_t *stream, ssize_t nread, const uv_buf_t* buf)
 
           addr_t addr;
           uv_ip4_addr(ip, atoi(port), &(addr.addr_in));
-          map_insert(data->peers, &mac_broadcast, &addr);
+          data->peers= map_insert(data->peers, &mac_broadcast, &addr);
       } else if (strncmp("list", cmd, 4)==0) {
           mac_map * peer = map_find(data->peers, &mac_broadcast);
           while (peer) {
