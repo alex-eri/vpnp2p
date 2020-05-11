@@ -8,6 +8,7 @@
 #ifndef MACMAP_H
 #define MACMAP_H 1
 
+#define MALLOCCLEAR(type, var) type * var= malloc(sizeof(type)); memset(var,0,sizeof(type));
 #define TIMEOUT 120
 
 typedef struct mac_s {

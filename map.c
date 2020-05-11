@@ -43,30 +43,21 @@ void map_remove(list_t * peers, mac_t *mac, addr_t *addr, bool _and) {
 
 mac_map *  map_find(list_t * peers, mac_t *mac, mac_map * prev) {
     mac_map * p ;
-
-    if (prev) {
-        p = prev;
-    } else {
-        p = peers->items;
-    }
+    if (prev) { p = prev; }
+    else { p = peers->items; }
     time_t now = time(0);
-
     while ( p ) {
         if ( p->expire < now ) {
-            if (prev) {
-                prev->next = p->next;
-            }
-            else {
-                peers->items = p->next;
-            }
-            prev=p;
-            p=p->next;
+            if (prev) { prev->next = p->next; }
+            else { peers->items = p->next; }
+            prev = p;
+            p = p->next;
             free(prev);
         } else if ( CHECK(p, mac) ) {
             return p;
         } else {
             prev = p;
-            p=p->next;
+            p = p->next;
         }
     };
 

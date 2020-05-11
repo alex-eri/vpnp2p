@@ -160,7 +160,8 @@ void on_read(uv_udp_t *handle, ssize_t nread, const uv_buf_t *buf, const struct 
         map_insert(&(data->peers), mac, (addr_t*) addr);
         map_insert(&(data->peers), &mac_broadcast, (addr_t*) addr);
         mbuf = uv_buf_init(buf->base+2, nread-2);
-        uv_write_t *req=malloc(sizeof (uv_write_t));
+        //uv_write_t *req=malloc(sizeof (uv_write_t));
+        MALLOCCLEAR(uv_write_t, req);
         uv_write(req, (uv_stream_t *)data->tun, &mbuf, 1, on_write);
 
         break;
@@ -182,12 +183,13 @@ void stun_on_resolved(uv_getaddrinfo_t* req, int status, struct addrinfo* res) {
             break;
         }
     } while( res->ai_next );
-    struct sockaddr * addr = malloc(sizeof(struct sockaddr));
+    //struct sockaddr * addr = malloc(sizeof(struct sockaddr));
+    MALLOCCLEAR(struct sockaddr, addr);
     memcpy(addr, addrp, sizeof(struct sockaddr));
     char extaddr[17] = { 0 };
     uv_ip4_name((struct sockaddr_in *)addr, extaddr, 16);
-    uv_udp_send_t * udp_req= malloc(sizeof (uv_udp_send_t));
-    memset(udp_req, 0, sizeof (uv_udp_send_t));
+    //uv_udp_send_t * udp_req= malloc(sizeof (uv_udp_send_t));
+    MALLOCCLEAR(uv_udp_send_t, udp_req);
     udp_req->data = req->data;
     service_data_t * data = req->data;
     struct STUNMessageHeader request;
@@ -256,7 +258,7 @@ void packet_on_tap(uv_stream_t* handle, ssize_t nread, const uv_buf_t* buf){
         free(buf->base);
         return;
     }
-    uv_udp_send_t *udp_req;
+    uv_udp_send_t * udp_req;
 
     char * message = malloc(nread + 2);
     memset(message, 0x75, 2);
@@ -268,8 +270,9 @@ void packet_on_tap(uv_stream_t* handle, ssize_t nread, const uv_buf_t* buf){
 
     while (peer) {
         udp_req = malloc(sizeof (uv_udp_send_t));
+        memset(udp_req, 0, sizeof (uv_udp_send_t));
         uv_udp_send(udp_req, data->socket, &message_buf, 1, &(peer->addr.addr), on_send);
-        fprintf_ipport(stderr,&(peer->addr.addr_in));
+        // fprintf_ipport(stderr,&(peer->addr.addr_in));
         if (peer->next) {
             peer = map_find(&(data->peers), mac, peer->next);
         } else {
@@ -293,8 +296,12 @@ void read_stdin(uv_stream_t *stream, ssize_t nread, const uv_buf_t* buf)
   char * class = strtok_r (buf->base, " ", &tokp);
   char * cmd = strtok_r (NULL, " ", &tokp);
 
-  if (strncmp("config", class, 6)==0) {
-      if (strncmp("stun", cmd, 6)==0) {
+  if (class == NULL && (strncmp("help", class, 4)==0)) {
+      fprintf(stderr, "config stun ip:port\npeer add ip:port\npeer list\nshow\nhelp");
+  }
+  else if (strncmp("config", class, 6)==0) {
+      if (cmd == NULL) {}
+      else if (strncmp("stun", cmd, 6)==0) {
           char *ip = strtok_r (NULL, " :", &tokp);
           char *port = strtok_r (NULL, " :", &tokp);
           free(data->stun_host);
@@ -310,7 +317,8 @@ void read_stdin(uv_stream_t *stream, ssize_t nread, const uv_buf_t* buf)
 
 
   else if  (strncmp("peer", class, 4)==0) {
-      if (strncmp("add", cmd, 3)==0) {
+      if (cmd == NULL) {}
+      else if (strncmp("add", cmd, 3)==0) {
           char *ip = strtok_r (NULL, " :", &tokp);
           char *port = strtok_r (NULL, " :", &tokp);
 
@@ -335,7 +343,7 @@ void read_stdin(uv_stream_t *stream, ssize_t nread, const uv_buf_t* buf)
   else if (strncmp("show", class, 4)==0) {
       fprintf(stdout,"\nexternal address: ");
       fprintf_ipport(stdout, (struct sockaddr_in *)&(data->extaddr));
-      fprintf(stdout,"\ninternal address: ");
+      fprintf(stdout,"\nbind address: ");
       fprintf_ipport(stdout, (struct sockaddr_in *)&(data->intaddr));
       fprintf(stdout,"\n");
   }
@@ -347,11 +355,16 @@ int main()
 {
     int r;
     uv_loop_t *loop = uv_default_loop();
-    uv_pipe_t * tun_pipe =  malloc(sizeof (uv_pipe_t));
-    uv_udp_t * recv_socket = malloc(sizeof (uv_udp_t));
-    service_data_t * data = malloc(sizeof (service_data_t));
 
-    uv_pipe_t * stdin_pipe = malloc(sizeof (uv_pipe_t));
+//    uv_pipe_t * tun_pipe =  malloc(sizeof (uv_pipe_t));
+//    uv_udp_t * recv_socket = malloc(sizeof (uv_udp_t));
+//    service_data_t * data = malloc(sizeof (service_data_t));
+//    uv_pipe_t * stdin_pipe = malloc(sizeof (uv_pipe_t));
+    MALLOCCLEAR(uv_pipe_t, tun_pipe);
+    MALLOCCLEAR(uv_udp_t, recv_socket);
+    MALLOCCLEAR(service_data_t, data);
+    MALLOCCLEAR(uv_pipe_t, stdin_pipe);
+
     stdin_pipe->data = data;
     uv_pipe_init(uv_default_loop(), stdin_pipe, 0);
     uv_pipe_open(stdin_pipe, 0);
